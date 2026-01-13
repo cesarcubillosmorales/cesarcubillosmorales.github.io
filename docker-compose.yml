@@ -1,0 +1,65 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: rcic_os
+      POSTGRES_USER: rcic
+      POSTGRES_PASSWORD: rcic_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - rcic_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rcic -d rcic_os"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DJANGO_DEBUG: "1"
+      DJANGO_SECRET_KEY: "dev-secret-key-change-me"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,backend"
+      DATABASE_URL: "postgresql://rcic:rcic_dev_password@db:5432/rcic_os"
+      REDIS_URL: "redis://redis:6379/0"
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      API_PROXY_URL: "http://backend:8000"
+      NEXT_PUBLIC_APP_NAME: "RCIC Practice OS"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  rcic_db_data:
